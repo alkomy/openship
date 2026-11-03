@@ -8750,6 +8750,222 @@
         ],
         "article": "## NVIDIA inference preview\n\nThis template uses vLLM's official CUDA image, one NVIDIA GPU and a generated API key for its OpenAI-compatible API. It is listed as a preview and cannot be installed yet: real NVIDIA hardware validation is still required. It is self-hosted only and does not support managed Cloud or CPU-only servers.\n\nThe server needs a compatible NVIDIA driver and NVIDIA Container Toolkit. The selected model must fit the GPU's VRAM; ordinary RAM guidance does not measure VRAM or reserve GPU capacity. Openship does not provision GPUs or install drivers.\n\n## Model and startup\n\nThe initial model is `Qwen/Qwen3-0.6B`. Choose a different Hugging Face model and, when required, provide a token and accept its license on Hugging Face. The first start downloads and loads the model. Check Logs for progress; a starting health check is not proof of a failed deployment.\n\nThe template persists model downloads and compilation caches. It gives the container a private 2 GiB `/dev/shm`, without sharing the host IPC namespace or enabling privileged mode. Context length, model choice and concurrency determine memory demand.\n\nUse the generated API key as a bearer token for `/v1` requests. Keep that key private. The pinned image's CUDA version must be compatible with the host driver; this preview is not a guarantee for every NVIDIA card or model.\n\n[Official Docker deployment](https://docs.vllm.ai/en/stable/deployment/docker/) · [GPU requirements](https://docs.vllm.ai/en/stable/getting_started/installation/gpu/)"
       }
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
+      "available": false,
+      "verified": true,
+      "id": "freescout",
+      "name": "FreeScout",
+      "description": "A shared inbox and help desk for your support team, with a private MySQL database and a preconfigured administrator.",
+      "kind": "template",
+      "logo": "freescout",
+      "category": "other",
+      "repository": "https://github.com/freescout-help-desk/freescout",
+      "tags": [
+        "helpdesk",
+        "support",
+        "shared-inbox",
+        "tickets"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "freescout-db",
+          "image": "mysql:8.4.13",
+          "restart": "unless-stopped",
+          "environment": {
+            "MYSQL_DATABASE": "freescout",
+            "MYSQL_USER": "freescout"
+          },
+          "secretEnv": [
+            "MYSQL_PASSWORD",
+            "MYSQL_ROOT_PASSWORD"
+          ],
+          "volumes": [
+            "freescout_db_data:/var/lib/mysql"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "mysqladmin ping -h localhost -u\"$MYSQL_USER\" -p\"$MYSQL_PASSWORD\""
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 12,
+            "startPeriod": "30s"
+          }
+        },
+        {
+          "name": "freescout",
+          "image": "nfrastack/freescout:2.2.22",
+          "exposed": true,
+          "exposedPort": 80,
+          "routes": [
+            {
+              "port": 80
+            }
+          ],
+          "restart": "unless-stopped",
+          "dependsOn": [
+            "freescout-db"
+          ],
+          "volumes": [
+            "freescout_data:/data",
+            "freescout_logs:/logs"
+          ],
+          "environment": {
+            "APP_URL": "{{publicUrl:freescout}}",
+            "SETUP_TYPE": "AUTO",
+            "DB_TYPE": "mysql",
+            "DB_HOST": "freescout-db",
+            "DB_PORT": "3306",
+            "DB_NAME": "freescout",
+            "DB_USER": "freescout",
+            "ADMIN_FIRST_NAME": "Admin",
+            "ADMIN_LAST_NAME": "User"
+          },
+          "secretEnv": [
+            "DB_PASS",
+            "ADMIN_PASS"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "wget -q -O /dev/null http://127.0.0.1/login || exit 1"
+            ],
+            "interval": "15s",
+            "timeout": "5s",
+            "retries": 20,
+            "startPeriod": "180s"
+          }
+        }
+      ],
+      "configFields": [
+        {
+          "key": "MYSQL_ROOT_PASSWORD",
+          "service": "freescout-db",
+          "label": "Database root password",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "MYSQL_PASSWORD",
+          "service": "freescout-db",
+          "label": "Database password",
+          "generate": "secret",
+          "secret": true,
+          "generateGroup": "freescout-db"
+        },
+        {
+          "key": "DB_PASS",
+          "service": "freescout",
+          "label": "Database password (app side)",
+          "generate": "secret",
+          "secret": true,
+          "generateGroup": "freescout-db"
+        },
+        {
+          "key": "ADMIN_PASS",
+          "service": "freescout",
+          "label": "Admin password",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "settings": [
+        {
+          "id": "setup",
+          "label": "Initial account",
+          "columns": 2,
+          "fields": [
+            {
+              "key": "ADMIN_EMAIL",
+              "service": "freescout",
+              "label": "Admin email",
+              "type": "text",
+              "default": "admin@example.com",
+              "required": true,
+              "installStep": true,
+              "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+              "patternError": "Enter an email address.",
+              "help": "Used for the initial administrator. Manage existing accounts in the app."
+            }
+          ]
+        }
+      ],
+      "installLayout": {
+        "settings": "single",
+        "columns": 2
+      },
+      "endpoints": [
+        {
+          "service": "freescout",
+          "port": 80,
+          "label": "FreeScout",
+          "kind": "http",
+          "defaultMode": "domain"
+        },
+        {
+          "service": "freescout-db",
+          "port": 3306,
+          "label": "Database",
+          "kind": "tcp",
+          "scope": "internal",
+          "defaultMode": "internal",
+          "allowedModes": [
+            "internal"
+          ]
+        }
+      ],
+      "connection": {
+        "title": "Sign in to FreeScout",
+        "description": "Sign in with the email and generated password below. The administrator is created on the first start, which takes a few minutes while the database is set up.",
+        "guide": {
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "url",
+            "label": "FreeScout",
+            "source": "publicUrl:freescout",
+            "kind": "url",
+            "recommended": true
+          },
+          {
+            "id": "email",
+            "label": "Email",
+            "source": "env:freescout:ADMIN_EMAIL",
+            "width": "half"
+          },
+          {
+            "id": "password",
+            "label": "Password",
+            "source": "env:freescout:ADMIN_PASS",
+            "secret": true,
+            "width": "half"
+          }
+        ],
+        "firstLogin": {
+          "note": "Account changes made in the app (a password change, new users) are preserved on redeployment; the administrator is only created on a fresh database. To send and receive mail, add a mailbox in the app under Manage > Mailboxes."
+        }
+      },
+      "marketplace": {
+        "features": [
+          {
+            "title": "Shared inbox",
+            "description": "Handle support email as tickets that your whole team can see and answer."
+          },
+          {
+            "title": "Private database",
+            "description": "Conversations live in a dedicated, project-scoped MySQL instance."
+          },
+          {
+            "title": "Workers included",
+            "description": "The queue worker and scheduler that fetch and send mail run inside the app container."
+          }
+        ]
+      }
     }
   ]
 }
