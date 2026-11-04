@@ -37,6 +37,7 @@
       "name": "freescout",
       "image": "nfrastack/freescout:2.2.22",
       "exposed": true,
+      "ports": ["80:80"],
       "exposedPort": 80,
       "routes": [{ "port": 80 }],
       "restart": "unless-stopped",
