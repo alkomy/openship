@@ -11056,6 +11056,311 @@
         ],
         "article": "## Calendars and contacts for your mailboxes\n\nRadicale adds CalDAV calendars and CardDAV address books alongside OpenShip Mail. It is an optional app: install it on the mail server or another server, then manage its deployments, settings, and storage under Apps.\n\nIt uses Radicale's built-in IMAP authentication. Users sign in with their **full mailbox email address and mailbox password**, including mailboxes on additional domains hosted by that IMAP server. There is no second account database or administrator password to synchronize. Each mailbox can access only its own collections.\n\n## Install\n\n1. Set up Mail and create your mailboxes first. Copy the hostname from **Mail → Overview**, for example `mail.example.com`.\n2. Install Radicale and enter that hostname as **IMAP hostname**. The app must be able to reach it on port **993**, and the mail server must present a valid, trusted TLS certificate for that hostname. Authentication fails if the certificate is invalid or the server is unreachable.\n3. Give Radicale its own HTTPS hostname, such as `dav.example.com`, using the standard app domain settings. Wait for the domain and certificate to be ready before connecting clients. Keep the existing mail, MX, and webmail DNS records unchanged.\n4. Open the HTTPS address and sign in with a mailbox account. Use Radicale's collection manager to create a calendar and an address book, or import existing `.ics` and `.vcf` files.\n\nThe app can also use an existing external IMAPS server. That server must allow password authentication; OAuth-only mail providers are not supported by this template. When hosting the app in Cloud, the IMAPS hostname must be reachable from Cloud.\n\n## Connect native clients\n\nAdd a **CalDAV account** for calendars and a **CardDAV account** for contacts. Enter the Radicale server hostname, enable SSL/TLS, use port **443**, and supply your full mailbox email address and password. In DAVx⁵, use “Login with URL and user name” and enter the full HTTPS URL. For clients that require a collection URL, copy it from Radicale's collection manager.\n\nRadicale serves `/.well-known/caldav` and `/.well-known/carddav` on its own hostname. OpenShip's standard HTTPS routing passes these requests and DAV methods to the app. Entering the DAV hostname lets compatible clients discover the collections without a custom path.\n\nFor clients that discover a server from the **email domain alone**, publish these optional DNS records for each mailbox domain (replace the target with your DAV hostname):\n\n```text\n_caldavs._tcp.example.com.  SRV  0 1 443 dav.example.com.\n_carddavs._tcp.example.com. SRV  0 1 443 dav.example.com.\n_caldavs._tcp.example.com.  TXT  \"path=/\"\n_carddavs._tcp.example.com. TXT  \"path=/\"\n```\n\nDNS discovery support varies by client. The explicit HTTPS server address works without these records. If a client instead checks the mailbox domain's website for well-known URLs, configure redirects for those two paths on that website to the DAV HTTPS address; installing this app does not change another site's routes.\n\n## Passwords and stored data\n\nSuccessful logins are not cached. Changing a mailbox password or disabling its IMAP access applies to the next DAV request. Update the password in your calendar and contacts clients when it changes in Mail.\n\nCollections live in the app's persistent `radicale_data` volume under `/var/lib/radicale/collections`, and survive deployments and container replacement. Include that volume in your backup plan. Removing a mailbox does not erase its stored collections; deleting and recreating the same mailbox address gives it access to those collections again. Renaming an address does not move its collections. Export or remove the old collections before reassigning an address.\n\nThe included web page manages collections and imports/exports. Calendar and contacts views inside OpenShip Webmail are a separate feature; this app does not add JMAP or change email delivery.\n\nSee the [Radicale documentation](https://radicale.org/v3.html) for client setup and collection management."
       }
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
+      "available": false,
+      "verified": true,
+      "minEngine": "0.9.2",
+      "id": "twenty",
+      "name": "Twenty",
+      "description": "Open-source CRM: contacts, companies, deals and pipelines with a customizable data model, with a private PostgreSQL database, Redis and a preconfigured administrator.",
+      "kind": "template",
+      "logo": "twenty",
+      "category": "other",
+      "repository": "https://github.com/twentyhq/twenty",
+      "tags": [
+        "crm",
+        "sales",
+        "contacts",
+        "pipeline"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "twenty-db",
+          "image": "postgres:16-alpine",
+          "restart": "unless-stopped",
+          "environment": {
+            "POSTGRES_USER": "twenty",
+            "POSTGRES_DB": "default"
+          },
+          "secretEnv": [
+            "POSTGRES_PASSWORD"
+          ],
+          "volumes": [
+            "twenty_db_data:/var/lib/postgresql/data"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 12,
+            "startPeriod": "20s"
+          }
+        },
+        {
+          "name": "twenty-redis",
+          "image": "redis:7.4.12-alpine",
+          "restart": "unless-stopped",
+          "commandArgv": [
+            "redis-server",
+            "--maxmemory-policy",
+            "noeviction"
+          ],
+          "volumes": [
+            "twenty_redis_data:/data"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD",
+              "redis-cli",
+              "ping"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 6
+          }
+        },
+        {
+          "name": "twenty",
+          "image": "twentycrm/twenty:v2.55.0",
+          "restart": "unless-stopped",
+          "dependsOn": [
+            "twenty-db",
+            "twenty-redis"
+          ],
+          "ports": [
+            "8235:3000"
+          ],
+          "exposed": true,
+          "exposedPort": 3000,
+          "routes": [
+            {
+              "port": 3000
+            }
+          ],
+          "volumes": [
+            "twenty_data:/app/packages/twenty-server/.local-storage"
+          ],
+          "environment": {
+            "NODE_PORT": "3000",
+            "PG_DATABASE_URL": "postgres://twenty:{{config:DB_PASSWORD}}@twenty-db:5432/default",
+            "REDIS_URL": "redis://twenty-redis:6379",
+            "SERVER_URL": "{{publicUrl:twenty}}",
+            "STORAGE_TYPE": "local"
+          },
+          "secretEnv": [
+            "PG_DATABASE_URL",
+            "APP_SECRET",
+            "TWENTY_ADMIN_PASSWORD"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "curl -fsS -o /dev/null http://127.0.0.1:3000/healthz || exit 1"
+            ],
+            "interval": "15s",
+            "timeout": "5s",
+            "retries": 20,
+            "startPeriod": "300s"
+          }
+        },
+        {
+          "name": "twenty-worker",
+          "image": "twentycrm/twenty:v2.55.0",
+          "restart": "unless-stopped",
+          "dependsOn": [
+            "twenty"
+          ],
+          "commandArgv": [
+            "yarn",
+            "worker:prod"
+          ],
+          "volumes": [
+            "twenty_data:/app/packages/twenty-server/.local-storage"
+          ],
+          "environment": {
+            "PG_DATABASE_URL": "postgres://twenty:{{config:DB_PASSWORD}}@twenty-db:5432/default",
+            "REDIS_URL": "redis://twenty-redis:6379",
+            "SERVER_URL": "{{publicUrl:twenty}}",
+            "STORAGE_TYPE": "local",
+            "DISABLE_DB_MIGRATIONS": "true",
+            "DISABLE_CRON_JOBS_REGISTRATION": "true"
+          },
+          "secretEnv": [
+            "PG_DATABASE_URL",
+            "APP_SECRET"
+          ]
+        }
+      ],
+      "configFields": [
+        {
+          "key": "POSTGRES_PASSWORD",
+          "service": "twenty-db",
+          "label": "Database password",
+          "generate": "secret",
+          "secret": true,
+          "generateGroup": "twenty-db"
+        },
+        {
+          "key": "DB_PASSWORD",
+          "service": "twenty",
+          "label": "Database password (app side)",
+          "generate": "secret",
+          "secret": true,
+          "generateGroup": "twenty-db"
+        },
+        {
+          "key": "APP_SECRET",
+          "service": "twenty",
+          "label": "Application secret",
+          "help": "Auto-generated. Signs sessions and tokens shared by the server and the worker; changing it logs everyone out.",
+          "generate": "secret",
+          "secret": true,
+          "generateGroup": "twenty-secret"
+        },
+        {
+          "key": "APP_SECRET",
+          "service": "twenty-worker",
+          "label": "Application secret (worker)",
+          "generate": "secret",
+          "secret": true,
+          "generateGroup": "twenty-secret"
+        },
+        {
+          "key": "DB_PASSWORD",
+          "service": "twenty-worker",
+          "label": "Database password (worker)",
+          "generate": "secret",
+          "secret": true,
+          "generateGroup": "twenty-db"
+        },
+        {
+          "key": "TWENTY_ADMIN_PASSWORD",
+          "service": "twenty",
+          "label": "Admin password",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "settings": [
+        {
+          "id": "setup",
+          "label": "Initial account",
+          "columns": 2,
+          "fields": [
+            {
+              "key": "TWENTY_ADMIN_EMAIL",
+              "service": "twenty",
+              "label": "Admin email",
+              "type": "text",
+              "default": "admin@example.com",
+              "required": true,
+              "installStep": true,
+              "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+              "patternError": "Enter an email address.",
+              "help": "Used to sign in. Manage members in the app."
+            }
+          ]
+        }
+      ],
+      "installLayout": {
+        "settings": "single",
+        "columns": 2
+      },
+      "endpoints": [
+        {
+          "service": "twenty",
+          "port": 3000,
+          "label": "Twenty",
+          "kind": "http",
+          "defaultMode": "domain"
+        },
+        {
+          "service": "twenty-db",
+          "port": 5432,
+          "label": "Database",
+          "kind": "tcp",
+          "scope": "internal",
+          "defaultMode": "internal",
+          "allowedModes": [
+            "internal"
+          ]
+        }
+      ],
+      "prepare": [
+        {
+          "service": "twenty",
+          "title": "Create the administrator",
+          "description": "Signs the administrator up through Twenty's own API with the generated password, then creates and activates the workspace.",
+          "command": "node -e 'const u=\"http://127.0.0.1:3000/metadata\";const e=process.env;const q=async(query,variables,token)=>{const r=await fetch(u,{method:\"POST\",headers:{\"content-type\":\"application/json\",...(token?{authorization:\"Bearer \"+token}:{})},body:JSON.stringify({query,variables})});const j=await r.json();if(j.errors)throw new Error(j.errors[0].message);return j.data};(async()=>{const o=e.SERVER_URL;const a=await q(\"mutation($e:String!,$p:String!){signUp(email:$e,password:$p){tokens{accessOrWorkspaceAgnosticToken{token}}}}\",{e:e.TWENTY_ADMIN_EMAIL,p:e.TWENTY_ADMIN_PASSWORD});const t=a.signUp.tokens.accessOrWorkspaceAgnosticToken.token;const w=await q(\"mutation($n:String!){signUpInNewWorkspace(input:{displayName:$n}){loginToken{token}}}\",{n:\"Openship\"},t);const l=w.signUpInNewWorkspace.loginToken.token;const s=await q(\"mutation($l:String!,$o:String!){getAuthTokensFromLoginToken(loginToken:$l,origin:$o){tokens{accessOrWorkspaceAgnosticToken{token}}}}\",{l,o});const x=s.getAuthTokensFromLoginToken.tokens.accessOrWorkspaceAgnosticToken.token;await q(\"mutation($n:String!){activateWorkspace(data:{displayName:$n}){id activationStatus}}\",{n:\"Openship\"},x);console.log(\"twenty administrator created\")})().catch(x=>{console.error(\"ERR:\",x.message);process.exit(1)})'",
+          "capture": "twenty_admin_setup",
+          "once": true,
+          "mustSucceed": true,
+          "phase": "post-ready",
+          "readiness": {
+            "test": "curl -fsS -o /dev/null http://127.0.0.1:3000/healthz",
+            "interval": 3000,
+            "retries": 100
+          }
+        }
+      ],
+      "minResources": {
+        "cpuCores": 2,
+        "memoryMb": 4096
+      },
+      "connection": {
+        "title": "Sign in to Twenty",
+        "description": "Sign in with the email and generated password below. The account and workspace are created on first start, so no confirmation email is needed.",
+        "guide": {
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "url",
+            "label": "Twenty",
+            "source": "publicUrl:twenty",
+            "kind": "url",
+            "recommended": true
+          },
+          {
+            "id": "email",
+            "label": "Email",
+            "source": "env:twenty:TWENTY_ADMIN_EMAIL",
+            "width": "half"
+          },
+          {
+            "id": "password",
+            "label": "Password",
+            "source": "env:twenty:TWENTY_ADMIN_PASSWORD",
+            "secret": true,
+            "width": "half"
+          }
+        ],
+        "firstLogin": {
+          "note": "Account changes made in the app (a password change, new members) are preserved on redeployment. The first sign-in asks for your name and walks you through onboarding. Outgoing email is not configured, so invitation and password-reset emails are not sent; add SMTP through the EMAIL_* variables. The first start runs database migrations, so allow a few minutes."
+        }
+      },
+      "marketplace": {
+        "features": [
+          {
+            "title": "Contacts, companies and deals",
+            "description": "A customizable CRM data model with pipelines, tasks, notes and views."
+          },
+          {
+            "title": "Private database",
+            "description": "Your data lives in a dedicated, project-scoped PostgreSQL instance, with Redis for queues and caching."
+          },
+          {
+            "title": "Background jobs included",
+            "description": "A worker service runs queued and scheduled jobs alongside the server."
+          }
+        ]
+      }
     }
   ]
 }
