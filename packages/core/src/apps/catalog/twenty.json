@@ -246,7 +246,7 @@
       "readiness": {
         "test": "curl -fsS -o /dev/null http://127.0.0.1:3000/healthz",
         "interval": 3000,
-        "retries": 100
+        "retries": 400
       }
     }
   ],
