@@ -1,0 +1,283 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": false,
+  "verified": true,
+  "minEngine": "0.9.2",
+  "id": "brightbean-chat",
+  "name": "BrightBean Chat",
+  "description": "Self-hosted chat automation: build visual flows and run them on Instagram, WhatsApp, Messenger, Telegram, SMS and email, with a shared inbox, broadcasts and drip sequences. Includes a private PostgreSQL database and background worker.",
+  "kind": "template",
+  "logo": "brightbean-chat",
+  "category": "other",
+  "repository": "https://github.com/brightbeanxyz/brightbean-chat",
+  "tags": [
+    "chat-automation",
+    "chatbot",
+    "inbox",
+    "marketing"
+  ],
+  "framework": "docker-compose",
+  "settings": [
+    {
+      "id": "email",
+      "label": "Outgoing email",
+      "description": "Optional. Used for sign-up confirmation, password resets and invitations; without it the app still works.",
+      "columns": 2,
+      "fields": [
+        {
+          "key": "EMAIL_HOST",
+          "service": "brightbean-chat",
+          "label": "SMTP host",
+          "installStep": true,
+          "requiresRedeploy": true,
+          "type": "text",
+          "placeholder": "smtp.example.com",
+          "help": "Leave empty to skip outgoing email."
+        },
+        {
+          "key": "EMAIL_PORT",
+          "service": "brightbean-chat",
+          "label": "SMTP port",
+          "installStep": true,
+          "requiresRedeploy": true,
+          "type": "number",
+          "default": "587",
+          "integer": true,
+          "min": 1,
+          "max": 65535
+        },
+        {
+          "key": "EMAIL_HOST_USER",
+          "service": "brightbean-chat",
+          "label": "SMTP username",
+          "installStep": true,
+          "requiresRedeploy": true,
+          "type": "text"
+        },
+        {
+          "key": "EMAIL_HOST_PASSWORD",
+          "service": "brightbean-chat",
+          "label": "SMTP password",
+          "installStep": true,
+          "requiresRedeploy": true,
+          "type": "password",
+          "secret": true
+        },
+        {
+          "key": "EMAIL_USE_TLS",
+          "service": "brightbean-chat",
+          "label": "Use STARTTLS",
+          "installStep": true,
+          "requiresRedeploy": true,
+          "type": "boolean",
+          "default": "true"
+        },
+        {
+          "key": "DEFAULT_FROM_EMAIL",
+          "service": "brightbean-chat",
+          "label": "From address",
+          "installStep": true,
+          "requiresRedeploy": true,
+          "type": "text",
+          "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+          "patternError": "Enter an email address.",
+          "placeholder": "noreply@example.com",
+          "fullWidth": true
+        },
+        {
+          "key": "OPEN_SIGNUP",
+          "service": "brightbean-chat",
+          "label": "Keep sign-up open after the first account",
+          "installStep": true,
+          "requiresRedeploy": true,
+          "type": "boolean",
+          "default": "false",
+          "help": "Off: the first account becomes the owner and sign-up then closes. On: anyone who can reach the site can create their own organization."
+        }
+      ]
+    }
+  ],
+  "services": [
+    {
+      "name": "brightbean-chat-db",
+      "image": "postgres:16-alpine",
+      "restart": "unless-stopped",
+      "environment": {
+        "POSTGRES_USER": "brightbean",
+        "POSTGRES_DB": "brightbean_chat"
+      },
+      "secretEnv": [
+        "POSTGRES_PASSWORD"
+      ],
+      "volumes": [
+        "brightbean_chat_db_data:/var/lib/postgresql/data"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "pg_isready -U brightbean -d brightbean_chat"
+        ],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 5
+      }
+    },
+    {
+      "name": "brightbean-chat",
+      "build": {
+        "dockerfile": "FROM node:24-slim AS frontend\nARG BRIGHTBEAN_REF=7bf959b30cc7f345f84d2be59e68a0a05c327e4f\nADD https://codeload.github.com/brightbeanxyz/brightbean-chat/tar.gz/${BRIGHTBEAN_REF} /src.tar.gz\nRUN mkdir /app && tar -xzf /src.tar.gz -C /app --strip-components=1\nWORKDIR /app\nRUN npm ci --no-audit --no-fund\nRUN npm run build:css && test -s apps/theme/static/css/dist/styles.css\nRUN npm run build:js && test -s apps/flows/static/flows/builder/builder.js && test -s apps/flows/static/flows/builder/builder.css\n\nFROM python:3.12-slim AS builder\nENV PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_CACHE_DIR=1\nRUN python -m venv /opt/venv\nENV PATH=\"/opt/venv/bin:$PATH\"\nARG BRIGHTBEAN_REF=7bf959b30cc7f345f84d2be59e68a0a05c327e4f\nADD https://codeload.github.com/brightbeanxyz/brightbean-chat/tar.gz/${BRIGHTBEAN_REF} /src.tar.gz\nRUN mkdir /app && tar -xzf /src.tar.gz -C /app --strip-components=1\nWORKDIR /app\nRUN pip install --no-cache-dir --default-timeout=120 --retries 8 -r requirements/base.txt\n\nFROM python:3.12-slim AS runtime\nENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PORT=8000 MALLOC_ARENA_MAX=2 PATH=\"/opt/venv/bin:$PATH\"\nRUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/* \\\n    && groupadd --system --gid 1001 app \\\n    && useradd --system --uid 1001 --gid app --home-dir /app --shell /usr/sbin/nologin app\nWORKDIR /app\nCOPY --from=builder /opt/venv /opt/venv\nCOPY --from=builder --chown=app:app /app /app\nCOPY --from=frontend --chown=app:app /app/apps/theme/static/css/dist /app/apps/theme/static/css/dist\nCOPY --from=frontend --chown=app:app /app/apps/flows/static/flows/builder /app/apps/flows/static/flows/builder\nCOPY --chown=app:app brightbean-chat/openship_settings.py /app/config/settings/openship.py\nCOPY --chown=app:app brightbean-chat/openship_adapter.py /app/apps/accounts/openship_adapter.py\nRUN mkdir -p /app/staticfiles /app/media && chown app:app /app /app/staticfiles /app/media\nUSER app\nRUN DJANGO_SETTINGS_MODULE=config.settings.openship SECRET_KEY=collectstatic-build-placeholder ENCRYPTION_KEY_SALT=collectstatic-build-placeholder APP_URL=https://build.invalid DJANGO_ENV_FILE=/nonexistent python manage.py collectstatic --noinput --clear\nEXPOSE 8000\n",
+        "files": [
+          {
+            "path": "openship_settings.py",
+            "content": "import os\nfrom urllib.parse import urlparse\n\n# Open-ship install: the public host comes from APP_URL. This runs before the\n# production settings import, which refuses to boot without ALLOWED_HOSTS.\n_url = urlparse(os.environ.get(\"APP_URL\", \"\"))\n_hosts = [h for h in [_url.hostname, \"127.0.0.1\", \"localhost\"] if h]\nos.environ.setdefault(\"ALLOWED_HOSTS\", \",\".join(_hosts))\nif _url.scheme and _url.netloc:\n    os.environ.setdefault(\"CSRF_TRUSTED_ORIGINS\", f\"{_url.scheme}://{_url.netloc}\")\n\nfrom .production import *  # noqa: E402,F401,F403\n\nACCOUNT_ADAPTER = \"apps.accounts.openship_adapter.OpenshipAccountAdapter\"\n\n# HTTPS-only behaviour stays on whenever APP_URL is https; a plain-http (port\n# mode) install turns the redirect and secure cookies off so it can be used.\nif _url.scheme != \"https\":\n    SECURE_SSL_REDIRECT = False\n    SECURE_HSTS_SECONDS = 0\n    SECURE_HSTS_INCLUDE_SUBDOMAINS = False\n    SECURE_HSTS_PRELOAD = False\n    SESSION_COOKIE_SECURE = False\n    CSRF_COOKIE_SECURE = False\n"
+          },
+          {
+            "path": "openship_adapter.py",
+            "content": "import os\n\nfrom django.contrib.auth import get_user_model\n\nfrom .adapters import AccountAdapter\n\n\nclass OpenshipAccountAdapter(AccountAdapter):\n    \"\"\"Self-hosted default: only the first account can sign up.\n\n    BrightBean Chat gives every sign-up its own organization, so an internet-\n    facing install would let anyone create one. The first account becomes the\n    owner and sign-up then closes; set OPEN_SIGNUP=true to keep it open.\n    \"\"\"\n\n    def is_open_for_signup(self, request):\n        if os.environ.get(\"OPEN_SIGNUP\", \"false\").strip().lower() == \"true\":\n            return True\n        return not get_user_model().objects.exists()\n"
+          }
+        ]
+      },
+      "exposed": true,
+      "ports": [
+        "8241:8000"
+      ],
+      "exposedPort": 8000,
+      "routes": [
+        {
+          "port": 8000
+        }
+      ],
+      "restart": "unless-stopped",
+      "dependsOn": [
+        "brightbean-chat-db"
+      ],
+      "entrypointArgv": [
+        "bash",
+        "-c",
+        "set -e\npython manage.py migrate --noinput\npython manage.py process_tasks & worker=$!\ngunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2 --threads 2 & web=$!\ntrap 'kill $worker $web 2>/dev/null' TERM INT\nwait -n $worker $web\ncode=$?\nkill $worker $web 2>/dev/null\nexit $code"
+      ],
+      "volumes": [
+        "brightbean_chat_media:/app/media"
+      ],
+      "environment": {
+        "DJANGO_SETTINGS_MODULE": "config.settings.openship",
+        "APP_URL": "{{publicUrl:brightbean-chat}}",
+        "DJANGO_ENV_FILE": "/nonexistent",
+        "STORAGE_BACKEND": "local",
+        "OPEN_SIGNUP": "false",
+        "EMAIL_PORT": "587",
+        "EMAIL_USE_TLS": "true",
+        "DATABASE_URL": "postgres://brightbean:{{config:BRIGHTBEAN_CHAT_DB_PASSWORD}}@brightbean-chat-db:5432/brightbean_chat"
+      },
+      "secretEnv": [
+        "DATABASE_URL",
+        "SECRET_KEY",
+        "ENCRYPTION_KEY_SALT",
+        "EMAIL_HOST_PASSWORD"
+      ],
+      "resources": {
+        "cpuCores": 1,
+        "memoryMb": 1024,
+        "diskMb": 2048
+      },
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "curl -fsS -o /dev/null http://127.0.0.1:8000/healthz || exit 1"
+        ],
+        "interval": "15s",
+        "timeout": "10s",
+        "retries": 10,
+        "startPeriod": "90s"
+      }
+    }
+  ],
+  "configFields": [
+    {
+      "key": "POSTGRES_PASSWORD",
+      "service": "brightbean-chat-db",
+      "label": "Database password",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "brightbean-chat-db"
+    },
+    {
+      "key": "BRIGHTBEAN_CHAT_DB_PASSWORD",
+      "service": "brightbean-chat",
+      "label": "Database password (app side)",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "brightbean-chat-db"
+    },
+    {
+      "key": "SECRET_KEY",
+      "service": "brightbean-chat",
+      "label": "Django secret key",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "ENCRYPTION_KEY_SALT",
+      "service": "brightbean-chat",
+      "label": "Encryption salt",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "endpoints": [
+    {
+      "service": "brightbean-chat",
+      "port": 8000,
+      "label": "BrightBean Chat",
+      "kind": "http",
+      "defaultMode": "domain",
+      "help": "Messaging platforms send webhooks to this address, so use a domain with HTTPS."
+    },
+    {
+      "service": "brightbean-chat-db",
+      "port": 5432,
+      "label": "Database",
+      "kind": "tcp",
+      "scope": "internal",
+      "defaultMode": "internal",
+      "allowedModes": [
+        "internal"
+      ]
+    }
+  ],
+  "connection": {
+    "title": "Create your BrightBean Chat account",
+    "description": "There is no preset login. Open the address below and create the first account at /accounts/signup/; it becomes the owner and sign-up then closes. Add your own developer credentials for each messaging platform before connecting channels.",
+    "guide": {
+      "defaultMode": "public"
+    },
+    "outputs": [
+      {
+        "id": "url",
+        "label": "BrightBean Chat",
+        "source": "publicUrl:brightbean-chat",
+        "kind": "url",
+        "recommended": true
+      }
+    ],
+    "firstLogin": {
+      "note": "Create the first account straight after install: until it exists, anyone who can reach the address can claim the instance."
+    }
+  },
+  "marketplace": {
+    "features": [
+      {
+        "title": "Visual flow builder",
+        "description": "Design conversation flows once and run them across Instagram, WhatsApp, Messenger, Telegram, SMS and email."
+      },
+      {
+        "title": "Shared inbox and broadcasts",
+        "description": "Reply to contacts together, send broadcasts and run drip sequences."
+      },
+      {
+        "title": "Your own API credentials",
+        "description": "Talks directly to each platform with your developer apps, with no aggregator in between."
+      }
+    ]
+  }
+}
