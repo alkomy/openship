@@ -11056,6 +11056,312 @@
         ],
         "article": "## Calendars and contacts for your mailboxes\n\nRadicale adds CalDAV calendars and CardDAV address books alongside OpenShip Mail. It is an optional app: install it on the mail server or another server, then manage its deployments, settings, and storage under Apps.\n\nIt uses Radicale's built-in IMAP authentication. Users sign in with their **full mailbox email address and mailbox password**, including mailboxes on additional domains hosted by that IMAP server. There is no second account database or administrator password to synchronize. Each mailbox can access only its own collections.\n\n## Install\n\n1. Set up Mail and create your mailboxes first. Copy the hostname from **Mail → Overview**, for example `mail.example.com`.\n2. Install Radicale and enter that hostname as **IMAP hostname**. The app must be able to reach it on port **993**, and the mail server must present a valid, trusted TLS certificate for that hostname. Authentication fails if the certificate is invalid or the server is unreachable.\n3. Give Radicale its own HTTPS hostname, such as `dav.example.com`, using the standard app domain settings. Wait for the domain and certificate to be ready before connecting clients. Keep the existing mail, MX, and webmail DNS records unchanged.\n4. Open the HTTPS address and sign in with a mailbox account. Use Radicale's collection manager to create a calendar and an address book, or import existing `.ics` and `.vcf` files.\n\nThe app can also use an existing external IMAPS server. That server must allow password authentication; OAuth-only mail providers are not supported by this template. When hosting the app in Cloud, the IMAPS hostname must be reachable from Cloud.\n\n## Connect native clients\n\nAdd a **CalDAV account** for calendars and a **CardDAV account** for contacts. Enter the Radicale server hostname, enable SSL/TLS, use port **443**, and supply your full mailbox email address and password. In DAVx⁵, use “Login with URL and user name” and enter the full HTTPS URL. For clients that require a collection URL, copy it from Radicale's collection manager.\n\nRadicale serves `/.well-known/caldav` and `/.well-known/carddav` on its own hostname. OpenShip's standard HTTPS routing passes these requests and DAV methods to the app. Entering the DAV hostname lets compatible clients discover the collections without a custom path.\n\nFor clients that discover a server from the **email domain alone**, publish these optional DNS records for each mailbox domain (replace the target with your DAV hostname):\n\n```text\n_caldavs._tcp.example.com.  SRV  0 1 443 dav.example.com.\n_carddavs._tcp.example.com. SRV  0 1 443 dav.example.com.\n_caldavs._tcp.example.com.  TXT  \"path=/\"\n_carddavs._tcp.example.com. TXT  \"path=/\"\n```\n\nDNS discovery support varies by client. The explicit HTTPS server address works without these records. If a client instead checks the mailbox domain's website for well-known URLs, configure redirects for those two paths on that website to the DAV HTTPS address; installing this app does not change another site's routes.\n\n## Passwords and stored data\n\nSuccessful logins are not cached. Changing a mailbox password or disabling its IMAP access applies to the next DAV request. Update the password in your calendar and contacts clients when it changes in Mail.\n\nCollections live in the app's persistent `radicale_data` volume under `/var/lib/radicale/collections`, and survive deployments and container replacement. Include that volume in your backup plan. Removing a mailbox does not erase its stored collections; deleting and recreating the same mailbox address gives it access to those collections again. Renaming an address does not move its collections. Export or remove the old collections before reassigning an address.\n\nThe included web page manages collections and imports/exports. Calendar and contacts views inside OpenShip Webmail are a separate feature; this app does not add JMAP or change email delivery.\n\nSee the [Radicale documentation](https://radicale.org/v3.html) for client setup and collection management."
       }
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
+      "available": false,
+      "verified": true,
+      "minEngine": "0.9.2",
+      "id": "brightbean-studio",
+      "name": "BrightBean Studio",
+      "description": "Self-hosted social media management: plan, schedule, approve and publish posts to Facebook, Instagram, LinkedIn, TikTok, YouTube, Pinterest, Threads, Bluesky and more, with a private PostgreSQL database and background publishing worker.",
+      "kind": "template",
+      "logo": "brightbean-studio",
+      "category": "other",
+      "repository": "https://github.com/brightbeanxyz/brightbean-studio",
+      "tags": [
+        "social-media",
+        "scheduling",
+        "publishing",
+        "marketing"
+      ],
+      "framework": "docker-compose",
+      "settings": [
+        {
+          "id": "account",
+          "label": "Administrator and email",
+          "description": "The administrator account is created on first start. Email is optional but needed for password resets and invitations.",
+          "columns": 2,
+          "fields": [
+            {
+              "key": "DJANGO_SUPERUSER_EMAIL",
+              "service": "brightbean",
+              "label": "Administrator email",
+              "installStep": true,
+              "requiresRedeploy": true,
+              "type": "text",
+              "required": true,
+              "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+              "patternError": "Enter an email address.",
+              "placeholder": "you@example.com",
+              "fullWidth": true,
+              "help": "You sign in with this address and the generated password on the Connection card."
+            },
+            {
+              "key": "EMAIL_HOST",
+              "service": "brightbean",
+              "label": "SMTP host",
+              "installStep": true,
+              "requiresRedeploy": true,
+              "type": "text",
+              "placeholder": "smtp.example.com",
+              "help": "Leave empty to skip outgoing email."
+            },
+            {
+              "key": "EMAIL_PORT",
+              "service": "brightbean",
+              "label": "SMTP port",
+              "installStep": true,
+              "requiresRedeploy": true,
+              "type": "number",
+              "default": "587",
+              "integer": true,
+              "min": 1,
+              "max": 65535
+            },
+            {
+              "key": "EMAIL_HOST_USER",
+              "service": "brightbean",
+              "label": "SMTP username",
+              "installStep": true,
+              "requiresRedeploy": true,
+              "type": "text"
+            },
+            {
+              "key": "EMAIL_HOST_PASSWORD",
+              "service": "brightbean",
+              "label": "SMTP password",
+              "installStep": true,
+              "requiresRedeploy": true,
+              "type": "password",
+              "secret": true
+            },
+            {
+              "key": "EMAIL_USE_TLS",
+              "service": "brightbean",
+              "label": "Use STARTTLS",
+              "installStep": true,
+              "requiresRedeploy": true,
+              "type": "boolean",
+              "default": "true"
+            },
+            {
+              "key": "DEFAULT_FROM_EMAIL",
+              "service": "brightbean",
+              "label": "From address",
+              "installStep": true,
+              "requiresRedeploy": true,
+              "type": "text",
+              "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+              "patternError": "Enter an email address.",
+              "placeholder": "noreply@example.com",
+              "fullWidth": true
+            }
+          ]
+        }
+      ],
+      "services": [
+        {
+          "name": "brightbean-db",
+          "image": "postgres:16-alpine",
+          "restart": "unless-stopped",
+          "environment": {
+            "POSTGRES_USER": "brightbean",
+            "POSTGRES_DB": "brightbean"
+          },
+          "secretEnv": [
+            "POSTGRES_PASSWORD"
+          ],
+          "volumes": [
+            "brightbean_db_data:/var/lib/postgresql/data"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "pg_isready -U brightbean -d brightbean"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 5
+          }
+        },
+        {
+          "name": "brightbean",
+          "build": {
+            "dockerfile": "FROM python:3.12-slim\nENV PYTHONDONTWRITEBYTECODE=1 \\\n    PYTHONUNBUFFERED=1 \\\n    PORT=8000 \\\n    MALLOC_ARENA_MAX=2\nWORKDIR /app\nRUN apt-get update && apt-get install -y --no-install-recommends libpq-dev gcc curl ca-certificates ffmpeg \\\n    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \\\n    && apt-get install -y --no-install-recommends nodejs \\\n    && rm -rf /var/lib/apt/lists/*\nARG BRIGHTBEAN_REF=1d11c52007a3f714979ff1b071d153e69a8c274a\nRUN curl -fsSL \"https://codeload.github.com/brightbeanxyz/brightbean-studio/tar.gz/${BRIGHTBEAN_REF}\" | tar -xz --strip-components=1\nRUN pip install --no-cache-dir --default-timeout=120 --retries 8 -r requirements.txt\nRUN cd theme/static_src && npm ci --no-audit --no-fund && npm run build\nCOPY brightbean/openship_settings.py config/settings/openship.py\nRUN DJANGO_SETTINGS_MODULE=config.settings.openship SECRET_KEY=build-placeholder DATABASE_URL=sqlite:////tmp/build.db python manage.py collectstatic --noinput\nRUN groupadd --system --gid 1001 app && useradd --system --uid 1001 --gid app --home-dir /app --shell /usr/sbin/nologin app \\\n    && mkdir -p /app/media /app/staticfiles && chown -R app:app /app/media /app/staticfiles\nUSER app\nEXPOSE 8000\n",
+            "files": [
+              {
+                "path": "openship_settings.py",
+                "content": "from urllib.parse import urlparse\n\nfrom .production import *  # noqa: F401,F403\n\n# Open-ship install: the public host comes from APP_URL, so ALLOWED_HOSTS and\n# CSRF follow the address the app was installed on. HTTPS-only behaviour stays\n# on whenever APP_URL is https; a plain-http (port mode) install turns the\n# redirect and secure cookies off so it can be used at all.\n_url = urlparse(APP_URL)  # noqa: F405\nALLOWED_HOSTS = sorted({h for h in [_url.hostname, \"127.0.0.1\", \"localhost\", *ALLOWED_HOSTS] if h})  # noqa: F405\nif _url.scheme and _url.hostname:\n    CSRF_TRUSTED_ORIGINS = [f\"{_url.scheme}://{_url.netloc}\"]\nif _url.scheme != \"https\":\n    SECURE_SSL_REDIRECT = False\n    SECURE_HSTS_SECONDS = 0\n    SECURE_HSTS_INCLUDE_SUBDOMAINS = False\n    SECURE_HSTS_PRELOAD = False\n    SESSION_COOKIE_SECURE = False\n    CSRF_COOKIE_SECURE = False\n"
+              }
+            ]
+          },
+          "exposed": true,
+          "ports": [
+            "8240:8000"
+          ],
+          "exposedPort": 8000,
+          "routes": [
+            {
+              "port": 8000
+            }
+          ],
+          "restart": "unless-stopped",
+          "dependsOn": [
+            "brightbean-db"
+          ],
+          "entrypointArgv": [
+            "bash",
+            "-c",
+            "set -e\npython manage.py migrate --noinput\npython manage.py createsuperuser --noinput || true\npython manage.py run_studio_worker & worker=$!\ngunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 1 --threads 4 & web=$!\ntrap 'kill $worker $web 2>/dev/null' TERM INT\nwait -n $worker $web\ncode=$?\nkill $worker $web 2>/dev/null\nexit $code"
+          ],
+          "volumes": [
+            "brightbean_media:/app/media"
+          ],
+          "environment": {
+            "DJANGO_SETTINGS_MODULE": "config.settings.openship",
+            "DEBUG": "false",
+            "APP_URL": "{{publicUrl:brightbean}}",
+            "SIGNUP_MODE": "invite",
+            "STORAGE_BACKEND": "local",
+            "MEDIA_ROOT": "/app/media",
+            "SERVE_MEDIA": "true",
+            "DATABASE_URL": "postgres://brightbean:{{config:BRIGHTBEAN_DB_PASSWORD}}@brightbean-db:5432/brightbean",
+            "EMAIL_PORT": "587",
+            "EMAIL_USE_TLS": "true"
+          },
+          "secretEnv": [
+            "DATABASE_URL",
+            "SECRET_KEY",
+            "ENCRYPTION_KEY_SALT",
+            "DJANGO_SUPERUSER_PASSWORD",
+            "EMAIL_HOST_PASSWORD"
+          ],
+          "resources": {
+            "cpuCores": 1,
+            "memoryMb": 1024,
+            "diskMb": 2048
+          },
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "curl -fsS -o /dev/null http://127.0.0.1:8000/health/ || exit 1"
+            ],
+            "interval": "15s",
+            "timeout": "5s",
+            "retries": 10,
+            "startPeriod": "90s"
+          }
+        }
+      ],
+      "configFields": [
+        {
+          "key": "POSTGRES_PASSWORD",
+          "service": "brightbean-db",
+          "label": "Database password",
+          "generate": "secret",
+          "secret": true,
+          "generateGroup": "brightbean-db"
+        },
+        {
+          "key": "BRIGHTBEAN_DB_PASSWORD",
+          "service": "brightbean",
+          "label": "Database password (app side)",
+          "generate": "secret",
+          "secret": true,
+          "generateGroup": "brightbean-db"
+        },
+        {
+          "key": "SECRET_KEY",
+          "service": "brightbean",
+          "label": "Django secret key",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "ENCRYPTION_KEY_SALT",
+          "service": "brightbean",
+          "label": "Encryption salt",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "DJANGO_SUPERUSER_PASSWORD",
+          "service": "brightbean",
+          "label": "Administrator password",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "endpoints": [
+        {
+          "service": "brightbean",
+          "port": 8000,
+          "label": "BrightBean Studio",
+          "kind": "http",
+          "defaultMode": "domain",
+          "help": "Social platforms call back to this address, so use a domain with HTTPS."
+        },
+        {
+          "service": "brightbean-db",
+          "port": 5432,
+          "label": "Database",
+          "kind": "tcp",
+          "scope": "internal",
+          "defaultMode": "internal",
+          "allowedModes": [
+            "internal"
+          ]
+        }
+      ],
+      "connection": {
+        "title": "Sign in to BrightBean Studio",
+        "description": "Sign in with the administrator email and the generated password. Add your own developer credentials for each social platform in the admin area before connecting accounts.",
+        "guide": {
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "url",
+            "label": "BrightBean Studio",
+            "source": "publicUrl:brightbean",
+            "kind": "url",
+            "recommended": true
+          },
+          {
+            "id": "email",
+            "label": "Email",
+            "source": "env:brightbean:DJANGO_SUPERUSER_EMAIL",
+            "width": "half"
+          },
+          {
+            "id": "password",
+            "label": "Password",
+            "source": "env:brightbean:DJANGO_SUPERUSER_PASSWORD",
+            "secret": true,
+            "width": "half"
+          }
+        ],
+        "firstLogin": {
+          "note": "New sign-ups are by invitation only. The password is used when the administrator account is first created; changing it in the app is preserved across redeploys."
+        }
+      },
+      "marketplace": {
+        "features": [
+          {
+            "title": "One calendar for every channel",
+            "description": "Compose once and schedule to many social platforms from a single dashboard."
+          },
+          {
+            "title": "Your own API credentials",
+            "description": "Talks directly to each platform's official API with your developer apps, so no aggregator sits in between."
+          },
+          {
+            "title": "No per-seat or per-channel limits",
+            "description": "Self-hosted, with a private database and a background publishing worker."
+          }
+        ]
+      }
     }
   ]
 }
